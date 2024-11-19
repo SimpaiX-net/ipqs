@@ -2,6 +2,7 @@ package ipqs
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -50,6 +51,10 @@ func (c *Client) SetProxy(proxy string) *Client {
 
 // Provisions the client
 func (c *Client) Provision() (err error) {
+	if c.ttl == 0 {
+		c.ttl = time.Hour * 6
+	}
+
 	if c.proxy == "" {
 		return
 	}
@@ -93,9 +98,12 @@ func (c *Client) Provision() (err error) {
 func (c *Client) GetIPQS(ctx context.Context, lookup, user_agent string) error {
 	cache, hit := c.Map.Load(lookup)
 	if hit {
-		if time.Now().Unix() <= cache.(int64) {
+		if time.Now().Unix() < cache.(int64) {
+			fmt.Println("cache hit")
 			return nil
 		}
+
+		fmt.Println("cache miss")
 
 		// TTL is expired
 		c.Map.Delete(lookup)

@@ -8,14 +8,20 @@ import (
 	"github.com/SimpaiX-net/ipqs"
 )
 
-func TestCl(t *testing.T) {
+func BenchmarkClient(t *testing.B) {
 	client := ipqs.New()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
+	client.SetTTL(time.Millisecond * 200)
 
-	client.Provision()
-	for range 2 {
-		client.GetIPQS(ctx, "1.1.1.1", "test/bot")
-	}
+	t.RunParallel(func(p *testing.PB) {
+		for p.Next() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+
+			client.Provision()
+			client.GetIPQS(ctx, "1.1.1.1", "test/bot")
+
+			cancel()
+		}
+	})
 }
+
