@@ -2,7 +2,6 @@ package ipqs
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -99,11 +98,8 @@ func (c *Client) GetIPQS(ctx context.Context, lookup, user_agent string) error {
 	cache, hit := c.Map.Load(lookup)
 	if hit {
 		if time.Now().Unix() < cache.(int64) {
-			fmt.Println("cache hit")
 			return nil
 		}
-
-		fmt.Println("cache miss")
 
 		// TTL is expired
 		c.Map.Delete(lookup)
