@@ -14,8 +14,8 @@ func TestCl(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	client.Provision(ctx)
+	client.Provision()
 	for range 2 {
-		client.GetIPQS("1.1.1.1", "test/bot")
+		client.GetIPQS(ctx, "1.1.1.1", "test/bot")
 	}
 }

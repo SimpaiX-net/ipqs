@@ -23,7 +23,6 @@ var (
 type Client struct {
 	proxy string
 	ttl   time.Duration
-	ctx   context.Context
 	sync.Map
 	*fasthttp.Client
 }
@@ -50,9 +49,7 @@ func (c *Client) SetProxy(proxy string) *Client {
 }
 
 // Provisions the client
-func (c *Client) Provision(ctx context.Context) (err error) {
-	c.ctx = ctx
-
+func (c *Client) Provision() (err error) {
 	if c.proxy == "" {
 		return
 	}
@@ -93,7 +90,7 @@ func (c *Client) Provision(ctx context.Context) (err error) {
 //	Given user_agent is set for the request
 //
 // This will either timeout using c.ctx, set by c.Provision(ctx) or finalize it's task with absolute success
-func (c *Client) GetIPQS(lookup, user_agent string) error {
+func (c *Client) GetIPQS(ctx context.Context, lookup, user_agent string) error {
 	cache, hit := c.Map.Load(lookup)
 	if hit {
 		if time.Now().Unix() <= cache.(int64) {
@@ -137,8 +134,8 @@ func (c *Client) GetIPQS(lookup, user_agent string) error {
 	}()
 
 	select {
-	case <-c.ctx.Done():
-		return c.ctx.Err()
+	case <-ctx.Done():
+		return ctx.Err()
 	case err := <-done:
 		return err
 	}
