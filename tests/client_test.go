@@ -2,11 +2,14 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/SimpaiX-net/ipqs"
 )
+
+var done = make(chan error)
 
 func TestClient(t *testing.T) {
 	client := ipqs.New()
@@ -17,24 +20,29 @@ func TestClient(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, query := range []string{"1.1.1.1", "0.0.0.0"} {
-		if err := client.GetIPQS(context.TODO(), query, "test/bot"); err != nil {
-			t.Logf("ipqs: %s", err)
+	do := func(query string) {
+		start := time.Now()
+		err := client.GetIPQS(context.TODO(), query, "test/bot", done)
+		end := time.Since(start).Milliseconds()
+
+		if err != nil {
+			t.Logf("ipqs: %s took %dms", err, end)
 
 		} else {
-			t.Log("ipqs: good")
+			t.Logf("ipqs: good took %dms", end)
 		}
 
-		time.Sleep(time.Second * 3)
+	}
+	for _, query := range []string{"1.1.1.1", "0.0.0.0"} {
+		fmt.Println("---------new loop----------")
+		do(query)
+
+		time.Sleep(time.Second * 4)
 
 		for range 2 {
-			if err := client.GetIPQS(context.TODO(), "1.1.1.1", "test/bot"); err != nil {
-				t.Logf("ipqs: %s", err)
-
-			} else {
-				t.Log("ipqs: good")
-			}
+			do(query)
 		}
+		fmt.Println("---------end loop----------")
 	}
 }
 
@@ -47,7 +55,7 @@ func BenchmarkClient(t *testing.B) {
 	t.RunParallel(func(p *testing.PB) {
 		for p.Next() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-			client.GetIPQS(ctx, "1.1.1.1", "test/bot")
+			client.GetIPQS(ctx, "1.1.1.1", "test/bot", done)
 
 			cancel()
 		}

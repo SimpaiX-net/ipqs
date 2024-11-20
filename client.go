@@ -1,3 +1,7 @@
+/*
+todo..........
+api might change its not final
+*/
 package ipqs
 
 import (
@@ -27,14 +31,12 @@ type Client struct {
 	*fasthttp.Client
 }
 
-type CacheItem = []any
+type CacheItem = struct {
+	exp   int64
+	score CacheIndex
+}
 type CacheIndex = uint8
 type Result = uint8
-
-const (
-	exp   CacheIndex = 0
-	score CacheIndex = 1
-)
 
 const (
 	// Good reputation
@@ -68,7 +70,7 @@ func (c *Client) SetProxy(proxy string) *Client {
 // Result returns either GOOD, BAD or UNKNOWN
 func (c *Client) Cause(query string) (Result, bool) {
 	v, exists := c.Map.Load(query)
-	score := v.(CacheItem)[score].(Result)
+	score := v.(CacheItem).score
 
 	return Result(score), exists
 }
@@ -123,28 +125,34 @@ func (c *Client) Provision() (err error) {
 // To find out the cause you can use client.Cause(query) which returns the result.
 //
 // Use constants like BAD, GOOD or UNKNOWN to check against the result client.Cause returns
-func (c *Client) GetIPQS(ctx context.Context, query, user_agent string) error {
-	cache, hit := c.Map.Load(query)
-	if hit {
-		// cache hit
-		cache := cache.(CacheItem)
-
-		// check ttl expiration
-		if time.Now().Unix() < cache[exp].(int64) {
-			if cache[score].(uint8) == BAD {
-				return ErrBadIPRep
-			} else if cache[score].(uint8) == UNKNOWN {
-				return ErrUnknown
-			}
-
-			return nil
-		}
-	}
-
-	done := make(chan error)
-	store := make(CacheItem, 2)
-
+func (c *Client) GetIPQS(ctx context.Context, query, user_agent string, done chan error) error {
+	// apply timeout/ctx cancellation signal to the whole functionality
+	// the operation can complete with success before any of that occurs
+	//
+	// cancel must be called to free up resources after this method returns
 	go func() {
+		store := CacheItem{}
+
+		cache, hit := c.Map.Load(query)
+		if hit {
+			// cache hit
+			cache := cache.(CacheItem)
+
+			// check ttl expiration
+			if time.Now().Unix() < cache.exp {
+				if cache.score == BAD {
+					done <- ErrBadIPRep
+					return
+				} else if cache.score == UNKNOWN {
+					done <- ErrUnknown
+					return
+				}
+
+				done <- nil
+				return
+			}
+		}
+
 		req := fasthttp.AcquireRequest()
 		res := fasthttp.AcquireResponse()
 
@@ -166,24 +174,24 @@ func (c *Client) GetIPQS(ctx context.Context, query, user_agent string) error {
 
 		defer c.Map.Store(query, store)
 
-		store[exp] = time.Now().Add(c.ttl).Unix()
+		store.exp = time.Now().Add(c.ttl).Unix()
 
 		if res.StatusCode() != http.StatusOK &&
 			res.StatusCode() != http.StatusNotFound {
 
-			store[score] = UNKNOWN
+			store.score = UNKNOWN
 			done <- ErrUnknown
 			return
 		}
 
 		if res.StatusCode() != http.StatusNotFound {
 			done <- ErrBadIPRep
-			store[score] = BAD
+			store.score = BAD
 
 			return
 		}
 
-		store[score] = GOOD
+		store.score = GOOD
 		done <- nil
 	}()
 
