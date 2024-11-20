@@ -27,7 +27,7 @@ var (
 type Client struct {
 	proxy string
 	ttl   time.Duration
-	sync.Map
+	store sync.Map
 	*fasthttp.Client
 }
 
@@ -69,7 +69,7 @@ func (c *Client) SetProxy(proxy string) *Client {
 // Finds the exact cause for query in the cache
 // Result returns either GOOD, BAD or UNKNOWN
 func (c *Client) FoundCause(query string) (Result, bool) {
-	v, exists := c.Map.Load(query)
+	v, exists := c.store.Load(query)
 	score := v.(CacheItem).score
 
 	return Result(score), exists
@@ -135,7 +135,7 @@ func (c *Client) GetIPQS(ctx context.Context, query, user_agent string) error {
 	go func() {
 		store := CacheItem{}
 
-		cache, hit := c.Map.Load(query)
+		cache, hit := c.store.Load(query)
 		if hit {
 			// cache hit
 			cache := cache.(CacheItem)
@@ -174,7 +174,7 @@ func (c *Client) GetIPQS(ctx context.Context, query, user_agent string) error {
 			return
 		}
 
-		defer c.Map.Store(query, store)
+		defer c.store.Store(query, store)
 
 		store.exp = time.Now().Add(c.ttl).Unix()
 
