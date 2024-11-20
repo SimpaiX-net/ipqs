@@ -158,7 +158,6 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 				// evaluating
 				c.cache.Store(query, cache)
 			}()
-
 		}
 
 		req := fasthttp.AcquireRequest()
