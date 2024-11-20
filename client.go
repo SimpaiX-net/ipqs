@@ -29,6 +29,7 @@ type Client struct {
 
 type CacheItem = []any
 type CacheIndex = uint8
+type Result = uint8
 
 const (
 	exp   CacheIndex = 0
@@ -36,9 +37,12 @@ const (
 )
 
 const (
-	good    uint8 = 0
-	unknown uint8 = 1
-	bad     uint8 = 2
+	// Good reputation
+	GOOD Result = 0
+	// Unknown reputation
+	UNKNOWN Result = 1
+	// Bad reputation
+	BAD Result = 2
 )
 
 // Creates new IPQS client
@@ -58,6 +62,15 @@ func (c *Client) SetTTL(ttl time.Duration) {
 func (c *Client) SetProxy(proxy string) *Client {
 	c.proxy = proxy
 	return c
+}
+
+// Finds the exact cause for query in the cache
+// Result returns either GOOD, BAD or UNKNOWN
+func (c *Client) Cause(query string) (Result, bool) {
+	v, exists := c.Map.Load(query)
+	score := v.(CacheItem)[score].(Result)
+
+	return Result(score), exists
 }
 
 // Provisions the client
@@ -98,33 +111,34 @@ func (c *Client) Provision() (err error) {
 	return
 }
 
-// Gets the IP Quality scan results
+// Gets the result for the ip query score
 //
-// This will send a request towards InternetDB with lookup as parameter
-// to identify the trust score, determined by InternetDB
+// query is the ip/hostname to query
 //
-//	Given user_agent is set for the request
+//	user_agent will be used to set the request user agent
 //
-// This will either timeout using c.ctx, set by c.Provision(ctx) or finalize it's task with absolute success
-func (c *Client) GetIPQS(ctx context.Context, lookup, user_agent string) error {
-	cache, hit := c.Map.Load(lookup)
+// If this function returns and error then, the query had either a bad reputation
+// or it was unknown.
+//
+// To find out the cause you can use client.Cause(query) which returns the result.
+//
+// Use constants like BAD, GOOD or UNKNOWN to check against the result client.Cause returns
+func (c *Client) GetIPQS(ctx context.Context, query, user_agent string) error {
+	cache, hit := c.Map.Load(query)
 	if hit {
 		// cache hit
 		cache := cache.(CacheItem)
 
 		// check ttl expiration
 		if time.Now().Unix() < cache[exp].(int64) {
-			if cache[score].(uint8) == bad {
+			if cache[score].(uint8) == BAD {
 				return ErrBadIPRep
-			} else if cache[score].(uint8) == unknown {
+			} else if cache[score].(uint8) == UNKNOWN {
 				return ErrUnknown
 			}
 
 			return nil
 		}
-
-		// TTL is expired
-		c.Map.Delete(lookup)
 	}
 
 	done := make(chan error)
@@ -137,7 +151,7 @@ func (c *Client) GetIPQS(ctx context.Context, lookup, user_agent string) error {
 		defer fasthttp.ReleaseRequest(req)
 		defer fasthttp.ReleaseResponse(res)
 
-		req.SetRequestURI(InternetDB + lookup)
+		req.SetRequestURI(InternetDB + query)
 
 		req.Header.Add("User-Agent", user_agent)
 		req.Header.Add("Cache-Control", "must-revalidate")
@@ -150,26 +164,26 @@ func (c *Client) GetIPQS(ctx context.Context, lookup, user_agent string) error {
 			return
 		}
 
-		defer c.Map.Store(lookup, store)
+		defer c.Map.Store(query, store)
 
 		store[exp] = time.Now().Add(c.ttl).Unix()
 
 		if res.StatusCode() != http.StatusOK &&
 			res.StatusCode() != http.StatusNotFound {
 
-			store[score] = unknown
+			store[score] = UNKNOWN
 			done <- ErrUnknown
 			return
 		}
 
 		if res.StatusCode() != http.StatusNotFound {
 			done <- ErrBadIPRep
-			store[score] = bad
+			store[score] = BAD
 
 			return
 		}
 
-		store[score] = good
+		store[score] = GOOD
 		done <- nil
 	}()
 
