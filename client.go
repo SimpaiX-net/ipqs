@@ -131,6 +131,9 @@ func (c *Client) GetIPQS(ctx context.Context, query, user_agent string, done cha
 	//
 	// cancel must be called to free up resources after this method returns
 	go func() {
+		defer func() {
+			recover() // panic occurs when sending to a closed channel
+		}()
 		store := CacheItem{}
 
 		cache, hit := c.Map.Load(query)
