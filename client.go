@@ -155,7 +155,12 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 
 	SetDefaults:
 		{
-			cache.exp = time.Now().Add(ctx.Value(TTL_key).(time.Duration)).Unix()
+			exp, ok := ctx.Value(TTL_key).(time.Duration)
+			if !ok || exp == 0 {
+				exp = time.Hour * 24 * 7
+			}
+
+			cache.exp = time.Now().Add(exp).Unix()
 			defer func() {
 				// if we did defer c.cache.store(...) the store
 				// would be evalauted immediately but we need
