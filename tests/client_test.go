@@ -10,8 +10,12 @@ import (
 )
 
 func TestClient(t *testing.T) {
+	ctx := context.WithValue(
+		context.Background(),
+		ipqs.TTL(time.Second*2),
+		time.Second*3,
+	)
 	client := ipqs.New()
-	client.SetTTL(time.Second * 3)
 
 	err := client.Provision()
 	if err != nil {
@@ -20,7 +24,7 @@ func TestClient(t *testing.T) {
 
 	do := func(query string) {
 		start := time.Now()
-		err := client.GetIPQS(context.TODO(), query, "test/bot")
+		err := client.GetIPQS(ctx, query, "test/bot")
 		end := time.Since(start).Milliseconds()
 
 		if err != nil {
@@ -35,7 +39,7 @@ func TestClient(t *testing.T) {
 		fmt.Println("---------new loop----------")
 		do(query)
 
-		time.Sleep(time.Second * 4)
+		time.Sleep(time.Second * 1)
 
 		for range 2 {
 			do(query)
@@ -46,13 +50,18 @@ func TestClient(t *testing.T) {
 
 func BenchmarkClient(t *testing.B) {
 	client := ipqs.New()
-
-	client.SetTTL(time.Millisecond * 200)
 	client.Provision()
 
 	t.RunParallel(func(p *testing.PB) {
 		for p.Next() {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			ctx, cancel := context.WithTimeout(
+				context.WithValue(
+					context.Background(),
+					ipqs.TTL(time.Second*5),
+					time.Duration(time.Second*2),
+				),
+				time.Second*5,
+			)
 			client.GetIPQS(ctx, "1.1.1.1", "test/bot")
 
 			cancel()

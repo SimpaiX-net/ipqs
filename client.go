@@ -1,7 +1,3 @@
-/*
-todo..........
-api might change its not final
-*/
 package ipqs
 
 import (
@@ -26,9 +22,8 @@ var (
 // IPQS client
 type Client struct {
 	proxy string
-	ttl   time.Duration
-	store sync.Map
-	*fasthttp.Client
+	cache sync.Map // in memory cache
+	fc    *fasthttp.Client
 }
 
 type CacheItem = struct {
@@ -37,6 +32,7 @@ type CacheItem = struct {
 }
 type CacheIndex = uint8
 type Result = uint8
+type TTL = time.Duration
 
 const (
 	// Good reputation
@@ -50,13 +46,8 @@ const (
 // Creates new IPQS client
 func New() *Client {
 	return &Client{
-		Client: &fasthttp.Client{},
+		fc: &fasthttp.Client{},
 	}
-}
-
-// Sets the time to live for the cache
-func (c *Client) SetTTL(ttl time.Duration) {
-	c.ttl = ttl
 }
 
 // Sets proxy for use with IPQS client
@@ -67,9 +58,11 @@ func (c *Client) SetProxy(proxy string) *Client {
 }
 
 // Finds the exact cause for query in the cache
-// Result returns either GOOD, BAD or UNKNOWN
+//
+// Compare the constants GOOD, BAD and UNKNOWN only when the returned
+// bool is true, otherwise it means that there isn't a cache for the given query (key)
 func (c *Client) FoundCause(query string) (Result, bool) {
-	v, exists := c.store.Load(query)
+	v, exists := c.cache.Load(query)
 	score := v.(CacheItem).score
 
 	return Result(score), exists
@@ -77,10 +70,6 @@ func (c *Client) FoundCause(query string) (Result, bool) {
 
 // Provisions the client
 func (c *Client) Provision() (err error) {
-	if c.ttl == 0 {
-		c.ttl = time.Hour * 6
-	}
-
 	if c.proxy == "" {
 		return
 	}
@@ -103,10 +92,10 @@ func (c *Client) Provision() (err error) {
 
 	switch uri.Scheme {
 	case "http", "https":
-		c.Dial = fasthttpproxy.
+		c.fc.Dial = fasthttpproxy.
 			FasthttpHTTPDialerDualStack(c.proxy)
 	case "socks5":
-		c.Dial = fasthttpproxy.
+		c.fc.Dial = fasthttpproxy.
 			FasthttpSocksDialerDualStack(c.proxy)
 	}
 
@@ -117,25 +106,27 @@ func (c *Client) Provision() (err error) {
 //
 // query is the ip/hostname to query
 //
-//	user_agent will be used to set the request user agent
+//	userAgent will be used to set the request user agent
 //
-// If this function returns and error then, the query had either a bad reputation
-// or it was unknown.
+// This is a special sync function that will either return by cancellation signal,
+// whether delegated by a cancel call to the given context, or timeout occuring, returning
+// the associated error all together. If operation was successfull, the returned error will be nil.
 //
-// To find out the cause you can use client.Cause(query) which returns the result.
+// To find out the exact cause of any error, use the client.FoundCause method together with the constants:
+// GOOD, BAD and UNKNOWN. Only compare those constants to the returned value when the returned boolean is true.
 //
-// Use constants like BAD, GOOD or UNKNOWN to check against the result client.Cause returns
-func (c *Client) GetIPQS(ctx context.Context, query, user_agent string) error {
-	done := make(chan error)
+// It should not be checked when it is false, because that means that there isn't any cache for the given query aka key
+func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
+	ttl, ok := ctx.Value("ttl").(TTL)
+	if !ok || ttl == 0 {
+		ttl = TTL(time.Hour * 6)
+	}
 
-	// apply timeout/ctx cancellation signal to the whole functionality
-	// the operation can complete with success before any of that occurs
-	//
-	// cancel must be called to free up resources after this method returns
+	done := make(chan error)
 	go func() {
 		store := CacheItem{}
 
-		cache, hit := c.store.Load(query)
+		cache, hit := c.cache.Load(query)
 		if hit {
 			// cache hit
 			cache := cache.(CacheItem)
@@ -163,20 +154,20 @@ func (c *Client) GetIPQS(ctx context.Context, query, user_agent string) error {
 
 		req.SetRequestURI(InternetDB + query)
 
-		req.Header.Add("User-Agent", user_agent)
+		req.Header.Add("User-Agent", userAgent)
 		req.Header.Add("Cache-Control", "must-revalidate")
 		req.Header.Add("Content-Type", "application/json")
 
 		req.SetConnectionClose()
 
-		if err := c.Do(req, res); err != nil {
+		if err := c.fc.Do(req, res); err != nil {
 			done <- err
 			return
 		}
 
-		defer c.store.Store(query, store)
+		defer c.cache.Store(query, store)
 
-		store.exp = time.Now().Add(c.ttl).Unix()
+		store.exp = time.Now().Add(time.Hour * 6).Unix()
 
 		if res.StatusCode() != http.StatusOK &&
 			res.StatusCode() != http.StatusNotFound {
