@@ -68,7 +68,7 @@ func (c *Client) SetProxy(proxy string) *Client {
 
 // Finds the exact cause for query in the cache
 // Result returns either GOOD, BAD or UNKNOWN
-func (c *Client) Cause(query string) (Result, bool) {
+func (c *Client) FoundCause(query string) (Result, bool) {
 	v, exists := c.Map.Load(query)
 	score := v.(CacheItem).score
 
