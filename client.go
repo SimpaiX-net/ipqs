@@ -147,6 +147,9 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 				}
 			}
 
+			// required to run outside
+			// as the origin cache is shadowed in this block
+			// and if we'd apply this outside the if it becomes ugly
 			goto SetDefaults
 		}
 
