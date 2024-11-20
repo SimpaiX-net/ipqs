@@ -117,36 +117,48 @@ func (c *Client) Provision() (err error) {
 // whether delegated by a cancel call to the given context, or timeout occuring, returning
 // the associated error all together. If operation was successfull, the returned error will be nil.
 //
-// To find out the exact cause of any error, use the client.FoundCause method together with the constants:
-// GOOD, BAD and UNKNOWN. Only compare those constants to the returned value when the returned boolean is true.
-//
-// It should not be checked when it is false, because that means that there isn't any cache for the given query aka key
+// To find out the exact cause of any error, use the client.FoundCause method
 func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
-	ttl, ok := ctx.Value(TTL_key).(time.Duration)
-	if !ok || ttl == 0 {
-		ttl = time.Hour * 6
-	}
-
 	done := make(chan error)
-	go func() {
-		cache, hit := c.cache.Load(query)
-		if hit {
-			// cache hit
-			cache := cache.(CacheItem)
 
-			// check ttl expiration
-			if time.Now().Unix() < cache.exp {
-				if cache.score == BAD {
-					done <- ErrBadIPRep
-					return
-				} else if cache.score == UNKNOWN {
-					done <- ErrUnknown
+	go func() {
+		var cache CacheItem
+
+		if EnableCaching {
+			cache, hit := c.cache.Load(query)
+			if hit {
+				// cache hit
+				cache := cache.(CacheItem)
+
+				// check ttl expiration
+				if time.Now().Unix() < cache.exp {
+					if cache.score == BAD {
+						done <- ErrBadIPRep
+						return
+					} else if cache.score == UNKNOWN {
+						done <- ErrUnknown
+						return
+					}
+
+					done <- nil
 					return
 				}
-
-				done <- nil
-				return
 			}
+
+			goto SetDefaults
+		}
+
+	SetDefaults:
+		{
+			cache.exp = time.Now().Add(ctx.Value(TTL_key).(time.Duration)).Unix()
+			defer func() {
+				// if we did defer c.cache.store(...) the store
+				// would be evalauted immediately but we need
+				// wait for adjustsments on it to be completed before
+				// evaluating
+				c.cache.Store(query, cache)
+			}()
+
 		}
 
 		req := fasthttp.AcquireRequest()
@@ -164,38 +176,24 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 		req.SetConnectionClose()
 
 		if err := c.fc.Do(req, res); err != nil {
-			done <- err
+			signal(done, &cache, err, UNKNOWN)
 			return
 		}
-
-		store := CacheItem{
-			exp: time.Now().Add(ttl).Unix(),
-		}
-		defer func() {
-			// if we did defer c.cache.store(...) the store
-			// would be evalauted immediately but we need
-			// wait for adjustsments on it to be completed before
-			// evaluating
-			c.cache.Store(query, store)
-		}()
 
 		if res.StatusCode() != http.StatusOK &&
 			res.StatusCode() != http.StatusNotFound {
 
-			store.score = UNKNOWN
-			done <- ErrUnknown
+			signal(done, &cache, ErrUnknown, UNKNOWN)
 			return
 		}
 
 		if res.StatusCode() != http.StatusNotFound {
-			store.score = BAD
-			done <- ErrBadIPRep
+			signal(done, &cache, ErrBadIPRep, BAD)
 
 			return
 		}
 
-		store.score = GOOD
-		done <- nil
+		signal(done, &cache, nil, GOOD)
 	}()
 
 	select {
@@ -204,4 +202,12 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 	case err := <-done:
 		return err
 	}
+}
+
+func signal(done chan error, store *CacheItem, err error, score Result) {
+	if EnableCaching {
+		store.score = score
+	}
+
+	done <- err
 }

@@ -10,10 +10,12 @@ import (
 )
 
 func TestClient(t *testing.T) {
+	ipqs.EnableCaching = true
+
 	ctx := context.WithValue(
 		context.Background(),
 		ipqs.TTL_key,
-		time.Second*5,
+		time.Second*6,
 	)
 	client := ipqs.New()
 
@@ -49,6 +51,8 @@ func TestClient(t *testing.T) {
 }
 
 func BenchmarkClient(t *testing.B) {
+	ipqs.EnableCaching = true
+
 	ctx := context.WithValue(
 		context.Background(),
 		ipqs.TTL_key,
