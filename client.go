@@ -187,8 +187,8 @@ func (c *Client) GetIPQS(ctx context.Context, query, user_agent string) error {
 		}
 
 		if res.StatusCode() != http.StatusNotFound {
-			done <- ErrBadIPRep
 			store.score = BAD
+			done <- ErrBadIPRep
 
 			return
 		}
