@@ -27,7 +27,19 @@ type Client struct {
 	*fasthttp.Client
 }
 
-type CacheItem = string
+type CacheItem = []any
+type CacheIndex = uint8
+
+const (
+	exp   CacheIndex = 0
+	score CacheIndex = 1
+)
+
+const (
+	good    uint8 = 0
+	unknown uint8 = 1
+	bad     uint8 = 2
+)
 
 // Creates new IPQS client
 func New() *Client {
@@ -97,7 +109,17 @@ func (c *Client) Provision() (err error) {
 func (c *Client) GetIPQS(ctx context.Context, lookup, user_agent string) error {
 	cache, hit := c.Map.Load(lookup)
 	if hit {
-		if time.Now().Unix() < cache.(int64) {
+		// cache hit
+		cache := cache.(CacheItem)
+
+		// check ttl expiration
+		if time.Now().Unix() < cache[exp].(int64) {
+			if cache[score].(uint8) == bad {
+				return ErrBadIPRep
+			} else if cache[score].(uint8) == unknown {
+				return ErrUnknown
+			}
+
 			return nil
 		}
 
@@ -106,6 +128,7 @@ func (c *Client) GetIPQS(ctx context.Context, lookup, user_agent string) error {
 	}
 
 	done := make(chan error)
+	store := make(CacheItem, 2)
 
 	go func() {
 		req := fasthttp.AcquireRequest()
@@ -127,13 +150,26 @@ func (c *Client) GetIPQS(ctx context.Context, lookup, user_agent string) error {
 			return
 		}
 
-		defer c.Map.Store(lookup, time.Now().Add(c.ttl).Unix())
+		defer c.Map.Store(lookup, store)
 
-		if res.StatusCode() != http.StatusNotFound {
-			done <- ErrBadIPRep
+		store[exp] = time.Now().Add(c.ttl).Unix()
+
+		if res.StatusCode() != http.StatusOK &&
+			res.StatusCode() != http.StatusNotFound {
+
+			store[score] = unknown
+			done <- ErrUnknown
 			return
 		}
 
+		if res.StatusCode() != http.StatusNotFound {
+			done <- ErrBadIPRep
+			store[score] = bad
+
+			return
+		}
+
+		store[score] = good
 		done <- nil
 	}()
 
