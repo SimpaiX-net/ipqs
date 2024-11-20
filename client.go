@@ -32,7 +32,12 @@ type CacheItem = struct {
 }
 type CacheIndex = uint8
 type Result = uint8
-type TTL = time.Duration
+
+// must be done to avoid
+// collision with key of [context.WithValue]
+type ttl string
+
+const TTL_key ttl = "ttl"
 
 const (
 	// Good reputation
@@ -117,15 +122,13 @@ func (c *Client) Provision() (err error) {
 //
 // It should not be checked when it is false, because that means that there isn't any cache for the given query aka key
 func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
-	ttl, ok := ctx.Value("ttl").(TTL)
+	ttl, ok := ctx.Value(TTL_key).(time.Duration)
 	if !ok || ttl == 0 {
-		ttl = TTL(time.Hour * 6)
+		ttl = time.Hour * 6
 	}
 
 	done := make(chan error)
 	go func() {
-		store := CacheItem{}
-
 		cache, hit := c.cache.Load(query)
 		if hit {
 			// cache hit
@@ -165,9 +168,16 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 			return
 		}
 
-		defer c.cache.Store(query, store)
-
-		store.exp = time.Now().Add(time.Hour * 6).Unix()
+		store := CacheItem{
+			exp: time.Now().Add(ttl).Unix(),
+		}
+		defer func() {
+			// if we did defer c.cache.store(...) the store
+			// would be evalauted immediately but we need
+			// wait for adjustsments on it to be completed before
+			// evaluating
+			c.cache.Store(query, store)
+		}()
 
 		if res.StatusCode() != http.StatusOK &&
 			res.StatusCode() != http.StatusNotFound {

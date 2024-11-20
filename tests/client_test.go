@@ -12,8 +12,8 @@ import (
 func TestClient(t *testing.T) {
 	ctx := context.WithValue(
 		context.Background(),
-		ipqs.TTL(time.Second*2),
-		time.Second*3,
+		ipqs.TTL_key,
+		time.Second*5,
 	)
 	client := ipqs.New()
 
@@ -49,20 +49,19 @@ func TestClient(t *testing.T) {
 }
 
 func BenchmarkClient(t *testing.B) {
+	ctx := context.WithValue(
+		context.Background(),
+		ipqs.TTL_key,
+		time.Second*1,
+	)
+
 	client := ipqs.New()
 	client.Provision()
 
 	t.RunParallel(func(p *testing.PB) {
 		for p.Next() {
-			ctx, cancel := context.WithTimeout(
-				context.WithValue(
-					context.Background(),
-					ipqs.TTL(time.Second*5),
-					time.Duration(time.Second*2),
-				),
-				time.Second*5,
-			)
-			client.GetIPQS(ctx, "1.1.1.1", "test/bot")
+			ctx_, cancel := context.WithTimeout(ctx, time.Millisecond*200)
+			client.GetIPQS(ctx_, "1.1.1.1", "test/bot")
 
 			cancel()
 		}
