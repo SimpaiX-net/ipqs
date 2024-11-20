@@ -30,7 +30,9 @@ type CacheItem = struct {
 	exp   int64
 	score CacheIndex
 }
+
 type CacheIndex = uint8
+
 type Result = uint8
 
 // must be done to avoid
