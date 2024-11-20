@@ -17,6 +17,8 @@ var (
 
 	// If you want to enable internal caching
 	EnableCaching = false
+
+	DefaultTTL = time.Hour * 24 * 7
 )
 
 // IPQS client
@@ -147,9 +149,10 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 				}
 			}
 
-			// required to run outside
-			// as the origin cache is shadowed in this block
-			// and if we'd apply this outside the if it becomes ugly
+			// required to use goto, as cache is shadowed within this block
+			// and cannot be used properly, also we shouldnt move the functionality, SetDefaults label has
+			// to the outsid eof this block
+			// because it would require us to make a redundant if statement of the same
 			goto SetDefaults
 		}
 
@@ -157,7 +160,7 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 		{
 			exp, ok := ctx.Value(TTL_key).(time.Duration)
 			if !ok || exp == 0 {
-				exp = time.Hour * 24 * 7
+				exp = DefaultTTL
 			}
 
 			cache.exp = time.Now().Add(exp).Unix()
