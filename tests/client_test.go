@@ -30,7 +30,18 @@ func TestClient(t *testing.T) {
 		end := time.Since(start).Milliseconds()
 
 		if err != nil {
-			t.Logf("ipqs: %s took %dms", err, end)
+			cause, found := client.FoundCause(query)
+			if !found {
+				t.Logf("ipqs: %s took %dms", err, end)
+				return
+			}
+
+			switch cause {
+			case ipqs.BAD:
+				t.Logf("ipqs: %s took %dms cause: BAD", err, end)
+			case ipqs.UNKNOWN:
+				t.Logf("ipqs: %s took %dms cause: UNKNOWN", err, end)
+			}
 
 		} else {
 			t.Logf("ipqs: good took %dms", end)
