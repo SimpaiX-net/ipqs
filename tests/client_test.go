@@ -9,8 +9,6 @@ import (
 	"github.com/SimpaiX-net/ipqs"
 )
 
-var done = make(chan error)
-
 func TestClient(t *testing.T) {
 	client := ipqs.New()
 	client.SetTTL(time.Second * 3)
@@ -22,7 +20,7 @@ func TestClient(t *testing.T) {
 
 	do := func(query string) {
 		start := time.Now()
-		err := client.GetIPQS(context.TODO(), query, "test/bot", done)
+		err := client.GetIPQS(context.TODO(), query, "test/bot")
 		end := time.Since(start).Milliseconds()
 
 		if err != nil {
@@ -55,7 +53,7 @@ func BenchmarkClient(t *testing.B) {
 	t.RunParallel(func(p *testing.PB) {
 		for p.Next() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-			client.GetIPQS(ctx, "1.1.1.1", "test/bot", done)
+			client.GetIPQS(ctx, "1.1.1.1", "test/bot")
 
 			cancel()
 		}

@@ -125,15 +125,14 @@ func (c *Client) Provision() (err error) {
 // To find out the cause you can use client.Cause(query) which returns the result.
 //
 // Use constants like BAD, GOOD or UNKNOWN to check against the result client.Cause returns
-func (c *Client) GetIPQS(ctx context.Context, query, user_agent string, done chan error) error {
+func (c *Client) GetIPQS(ctx context.Context, query, user_agent string) error {
+	done := make(chan error)
+
 	// apply timeout/ctx cancellation signal to the whole functionality
 	// the operation can complete with success before any of that occurs
 	//
 	// cancel must be called to free up resources after this method returns
 	go func() {
-		defer func() {
-			recover() // panic occurs when sending to a closed channel
-		}()
 		store := CacheItem{}
 
 		cache, hit := c.Map.Load(query)
