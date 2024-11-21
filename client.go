@@ -54,10 +54,12 @@ func New() *Client {
 	return new(Client)
 }
 
-func (c *Client) SetProxy(proxy string) {
+func (c *Client) SetProxy(proxy string) *Client {
 	if proxy != "" {
 		c.proxy = proxy
 	}
+	
+	return c
 }
 
 
