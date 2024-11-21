@@ -15,8 +15,12 @@ func TestClient(t *testing.T) {
 	ctx := context.WithValue(
 		context.Background(),
 		ipqs.TTL_key,
-		time.Second*6,
+		time.Hour*24,
 	)
+
+	ctx_, cancel := context.WithTimeout(ctx, time.Second * 5)
+	defer cancel()
+	
 	client := ipqs.New()
 
 	err := client.Provision()
@@ -26,26 +30,13 @@ func TestClient(t *testing.T) {
 
 	do := func(query string) {
 		start := time.Now()
-		err := client.GetIPQS(ctx, query, "test/bot")
+		err := client.GetIPQS(ctx_, query, "test/bot")
 		end := time.Since(start).Milliseconds()
 
 		if err != nil {
-			cause, found := client.FoundCause(query)
-			if !found {
-				t.Logf("ipqs: %s took %dms", err, end)
-				return
-			}
+			t.Logf("ipqs: %s took %dms", err, end)
 
-			switch cause {
-			case ipqs.BAD:
-				t.Logf("ipqs: %s took %dms cause: BAD", err, end)
-			case ipqs.UNKNOWN:
-				t.Logf("ipqs: %s took %dms cause: UNKNOWN", err, end)
-			}
-
-		} else {
-			t.Logf("ipqs: good took %dms", end)
-		}
+		} 
 
 	}
 	for _, query := range []string{"1.1.1.1", "0.0.0.0"} {
@@ -67,7 +58,7 @@ func BenchmarkClient(t *testing.B) {
 	ctx := context.WithValue(
 		context.Background(),
 		ipqs.TTL_key,
-		time.Second*1,
+		time.Second*2,
 	)
 
 	client := ipqs.New()

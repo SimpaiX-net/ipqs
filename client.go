@@ -6,9 +6,6 @@ import (
 	"net/url"
 	"sync"
 	"time"
-
-	"github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttpproxy"
 )
 
 var (
@@ -24,8 +21,8 @@ var (
 // IPQS client
 type Client struct {
 	proxy string
+	httpClient    http.Client
 	cache sync.Map // in memory cache
-	fc    *fasthttp.Client
 }
 
 type CacheItem = struct {
@@ -54,172 +51,97 @@ const (
 
 // Creates new IPQS client
 func New() *Client {
-	return &Client{
-		fc: &fasthttp.Client{},
-	}
+	return new(Client)
 }
 
-// Sets proxy for use with IPQS client
-// This must precede before GetIPQS() if you want it to use your proxy
-func (c *Client) SetProxy(proxy string) *Client {
-	c.proxy = proxy
-	return c
-}
-
-// Finds the exact cause for query in the cache
-//
-// Compare the constants GOOD, BAD and UNKNOWN only when the returned
-// bool is true, otherwise it means that there isn't a cache for the given query (key)
-func (c *Client) FoundCause(query string) (Result, bool) {
-	v, exists := c.cache.Load(query)
-	score := v.(CacheItem).score
-
-	return Result(score), exists
-}
 
 // Provisions the client
-func (c *Client) Provision() (err error) {
-	if c.proxy == "" {
-		return
-	}
-
-	uri, err := url.Parse(c.proxy)
-	if err != nil {
-		return
-	}
-
-	var ok bool
-	for _, scheme := range supportedProtocols {
-		if scheme == uri.Scheme {
-			ok = true
+func (c *Client) Provision() error {
+	if c.proxy != "" {
+		uri, err := url.Parse(c.proxy)
+		if err != nil {
+			return err
+		}
+	
+		c.httpClient.Transport = &http.Transport{
+			Proxy: http.ProxyURL(uri),
 		}
 	}
-
-	if !ok {
-		return ErrInvalidProtocol
-	}
-
-	switch uri.Scheme {
-	case "http", "https":
-		c.fc.Dial = fasthttpproxy.
-			FasthttpHTTPDialerDualStack(c.proxy)
-	case "socks5":
-		c.fc.Dial = fasthttpproxy.
-			FasthttpSocksDialerDualStack(c.proxy)
-	}
-
-	return
+	
+	return nil
 }
 
-// Gets the result for the ip query score
+// 	Gets the result for the ip query score [cached]
 //
-// query is the ip/hostname to query
+// 	query is the ip/hostname to query
 //
 //	userAgent will be used to set the request user agent
-//
-// This is a special sync function that will either return by cancellation signal,
-// whether delegated by a cancel call to the given context, or timeout occuring, returning
-// the associated error all together. If operation was successfull, the returned error will be nil.
-//
-// To find out the exact cause of any error, use the client.FoundCause method
+// 
+//  The returned error can provide useful details
+// 
+//  nil means legit reputation, in constrast when it is not,
+//  you should check for ErrBadIPRep and ErrUnknown, and any other error which usually
+//  means a failure on reaching the InternetDB service
 func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
-	done := make(chan error)
+	var cache CacheItem
 
-	go func() {
-		var cache CacheItem
+	if EnableCaching {
+		cache, hit := c.cache.Load(query)
+		if hit {
+			// cache hit
+			cache := cache.(CacheItem)
 
-		if EnableCaching {
-			cache, hit := c.cache.Load(query)
-			if hit {
-				// cache hit
-				cache := cache.(CacheItem)
-
-				// check ttl expiration
-				if time.Now().Unix() < cache.exp {
-					if cache.score == BAD {
-						done <- ErrBadIPRep
-						return
-					} else if cache.score == UNKNOWN {
-						done <- ErrUnknown
-						return
-					}
-
-					done <- nil
-					return
+			// check ttl expiration
+			if time.Now().Unix() < cache.exp {
+				if cache.score == BAD {
+					return ErrBadIPRep
+				} else if cache.score == UNKNOWN {
+					return ErrUnknown
 				}
+
+				return nil
 			}
-
-			// required to use goto, as cache is shadowed within this block
-			// and cannot be used properly, also we shouldnt move the functionality, SetDefaults label has
-			// to the outsid eof this block
-			// because it would require us to make a redundant if statement of the same
-			goto SetDefaults
 		}
+	}
 
-	SetDefaults:
-		{
-			exp, ok := ctx.Value(TTL_key).(time.Duration)
-			if !ok || exp == 0 {
-				exp = DefaultTTL
-			}
+	exp, ok := ctx.Value(TTL_key).(time.Duration)
+	if !ok || exp == 0 {
+		exp = DefaultTTL
+	}
 
-			cache.exp = time.Now().Add(exp).Unix()
-			defer func() {
-				// if we did defer c.cache.store(...) the store
-				// would be evalauted immediately but we need
-				// wait for adjustsments on it to be completed before
-				// evaluating
-				c.cache.Store(query, cache)
-			}()
-		}
-
-		req := fasthttp.AcquireRequest()
-		res := fasthttp.AcquireResponse()
-
-		defer fasthttp.ReleaseRequest(req)
-		defer fasthttp.ReleaseResponse(res)
-
-		req.SetRequestURI(InternetDB + query)
-
-		req.Header.Add("User-Agent", userAgent)
-		req.Header.Add("Cache-Control", "must-revalidate")
-		req.Header.Add("Content-Type", "application/json")
-
-		req.SetConnectionClose()
-
-		if err := c.fc.Do(req, res); err != nil {
-			signal(done, &cache, err, UNKNOWN)
-			return
-		}
-
-		if res.StatusCode() != http.StatusOK &&
-			res.StatusCode() != http.StatusNotFound {
-
-			signal(done, &cache, ErrUnknown, UNKNOWN)
-			return
-		}
-
-		if res.StatusCode() != http.StatusNotFound {
-			signal(done, &cache, ErrBadIPRep, BAD)
-
-			return
-		}
-
-		signal(done, &cache, nil, GOOD)
+	cache.exp = time.Now().Add(exp).Unix()
+	defer func() {
+		// if we did defer c.cache.store(...) the store
+		// would be evalauted immediately but we need
+		// wait for adjustsments on it to be completed before
+		// evaluating
+		c.cache.Store(query, cache)
 	}()
+	
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-done:
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, InternetDB + query, nil)
+	if err != nil {
 		return err
 	}
-}
 
-func signal(done chan error, store *CacheItem, err error, score Result) {
-	if EnableCaching {
-		store.score = score
+	req.Header.Add("User-Agent", userAgent)
+	req.Header.Add("Cache-Control", "must-revalidate")
+	req.Header.Add("Content-Type", "application/json")
+
+	res, err := c.httpClient.Do(req); if err != nil {
+		return err
 	}
 
-	done <- err
+	if res.StatusCode == http.StatusNotFound {
+		cache.score = GOOD
+		return nil
+	}
+
+	if res.StatusCode == http.StatusOK {
+		cache.score = BAD
+		return ErrBadIPRep
+	}
+
+	cache.score = UNKNOWN
+	return ErrUnknown
 }
