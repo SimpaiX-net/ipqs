@@ -42,11 +42,11 @@ const TTL_key ttl = "ttl"
 
 const (
 	// Good reputation
-	GOOD Result = 0
+	GOOD Result = 1
 	// Unknown reputation
-	UNKNOWN Result = 1
+	UNKNOWN Result = 2
 	// Bad reputation
-	BAD Result = 2
+	BAD Result = 3
 )
 
 // Creates new IPQS client
