@@ -119,6 +119,8 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 	}
 
 	cache.exp = time.Now().Add(exp).Unix()
+	cache.score = UNKNOWN
+	
 	defer func() {
 		// if we did defer c.cache.store(...) the store
 		// would be evalauted immediately but we need
@@ -151,6 +153,5 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 		return ErrBadIPRep
 	}
 
-	cache.score = UNKNOWN
 	return ErrUnknown
 }
