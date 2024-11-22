@@ -8,12 +8,14 @@ There are rules for it to be used effectively, with no additional costs, perform
 - Reuse the same client using a reference, which should be allocated no more than once
 
 ### Performance | important
-When using this package, the caller must either use the API with own caching implementation, or prefer to enable the default in-memory cache by setting ``ipqs.EnableCaching = true``
+When using this package, the caller must either use the API with own caching implementation, or prefer to use the default in-memory cache, which is enabled by default.
+
+To disable: ``ipqs.EnableCaching = false``
 
 #### When using the built-in cache
 - Set the TTL once by having a ``context.WithValue`` as a parent to your context, be sure to use ``ipqs.TTL_key`` to set  the key
 
-#### Bench (with in memory cache enabled)
+#### Bench (with in memory cache enabled-by default)
 ```
 Running tool: C:\Program Files\Go\bin\go.exe test -benchmem -run=^$ -bench ^BenchmarkClient$ github.com/SimpaiX-net/ipqs/tests
 

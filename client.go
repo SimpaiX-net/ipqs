@@ -12,8 +12,8 @@ var (
 	// InternetDB endpoint
 	InternetDB = "https://internetdb.shodan.io/"
 
-	// If you want to enable internal caching
-	EnableCaching = false
+	// Control whether to enable caching or not
+	EnableCaching = true
 
 	DefaultTTL = time.Hour * 24 * 7
 )
