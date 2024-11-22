@@ -103,10 +103,11 @@ func (c *Client) GetIPQS(ctx context.Context, query, userAgent string) error {
 			if time.Now().Unix() < cache.exp {
 				if cache.score == BAD {
 					return ErrBadIPRep
-				} else if cache.score == UNKNOWN {
+				} 
+				
+				if cache.score == UNKNOWN {
 					return ErrUnknown
 				}
-
 				return nil
 			}
 		}
